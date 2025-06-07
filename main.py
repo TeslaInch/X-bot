@@ -9,7 +9,7 @@ import logging
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)  # this helps to see tweepy info like rate limits.
+logging.basicConfig(level=logging.INFO)  # See Tweepy info like rate limits
 
 client = tweepy.Client(
     bearer_token=os.getenv("BEARER_TOKEN"),
@@ -21,13 +21,18 @@ client = tweepy.Client(
 )
 
 TRIGGER_PHRASE = "riddle me this"
-TRIGGER_ACCOUNT = "projectruggaurd"
 
 last_seen_id = None  # Track the most recent tweet the bot has handled
 
 def process_mentions():
     global last_seen_id
-    response = client.get_users_mentions(id=client.get_me().data.id)
+    bot_user = client.get_me().data
+
+    response = client.get_users_mentions(
+        id=bot_user.id,
+        expansions=["referenced_tweets.id.author_id"],
+        tweet_fields=["referenced_tweets"]
+    )
 
     if not response.data:
         return  # No new mentions
@@ -38,30 +43,41 @@ def process_mentions():
 
         if TRIGGER_PHRASE in tweet.text.lower():
             try:
-                 # Check if this tweet is a reply and has referenced tweets
-                if tweet.referenced_tweets and len(tweet.referenced_tweets) > 0:
-                    replied_tweet_id = tweet.referenced_tweets[0].id
-                    replied_tweet = client.get_tweet(replied_tweet_id, expansions='author_id')
-                    original_author_id = replied_tweet.includes['users'][0].id
-                    report = analyze_account(original_author_id, client)
-                    trust = is_trusted_by_network(original_author_id, client)
-                    post_reply(tweet.id, report, trust, client)
+                referenced = tweet.referenced_tweets[0] if tweet.referenced_tweets else None
+
+                if referenced:
+                    if referenced.type == "quoted":
+                        print(f"Tweet {tweet.id} is a quote. Analyzing the quoter: @{tweet.author_id}")
+                        original_author_id = tweet.author_id  # The person quoting the tweet
+                    elif referenced.type == "replied_to":
+                        print(f"Tweet {tweet.id} is a reply. Analyzing the original author.")
+                        replied_tweet = client.get_tweet(referenced.id, expansions="author_id")
+                        original_author_id = replied_tweet.includes['users'][0].id
+                    else:
+                        print(f"Tweet {tweet.id} has unknown reference type. Skipping.")
+                        continue
                 else:
                     print(f"Tweet {tweet.id} does not reference another tweet. Skipping.")
+                    continue
+
+                report = analyze_account(original_author_id, client)
+                trust = is_trusted_by_network(original_author_id, client)
+                post_reply(tweet.id, report, trust, client)
+
             except Exception as e:
                 print(f"Error processing tweet {tweet.id}: {e}")
-
 
         last_seen_id = tweet.id
 
 if __name__ == "__main__":
     bot_info = client.get_me().data
-    print(f"Bot is running as: @{bot_info.username}")
+    print(f"🤖 Bot is running as: @{bot_info.username}")
     while True:
         try:
             process_mentions()
         except Exception as e:
             print(f"Unexpected error: {e}")
         time.sleep(60)  # Wait 60 seconds before checking again
+
 
 
