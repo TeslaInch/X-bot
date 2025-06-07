@@ -3,6 +3,7 @@ from textblob import TextBlob
 from collections import Counter
 import re
 from trusted_accounts import fetch_trusted_accounts
+from datetime import datetime, timezone
 
 TRUSTED_ACCOUNT_IDS = set(fetch_trusted_accounts())
 
@@ -15,7 +16,9 @@ def analyze_account(user_id, client):
     metrics = user.data.public_metrics
 
     # 1. Account Age
-    age = (datetime.utcnow() - user.data.created_at).days
+ 
+    age = (datetime.now(timezone.utc) - user.data.created_at).days
+
 
     # 2. Follower/Following Ratio
     ratio = metrics['followers_count'] / max(1, metrics['following_count'])
