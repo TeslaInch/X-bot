@@ -7,9 +7,10 @@ from trust_check import is_trusted_by_network
 from replier import post_reply
 import logging
 
+# Load environment variables
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO)  # See Tweepy info like rate limits
+logging.basicConfig(level=logging.INFO)
 
 client = tweepy.Client(
     bearer_token=os.getenv("BEARER_TOKEN"),
@@ -21,63 +22,93 @@ client = tweepy.Client(
 )
 
 TRIGGER_PHRASE = "riddle me this"
+SEEN_FILE = "last_seen_id.txt"
+CACHE = {}
 
-last_seen_id = None  # Track the most recent tweet the bot has handled
+# Last seen cache
+LAST_SEEN_ID = None
+
+def load_last_seen_id():
+    global LAST_SEEN_ID
+    try:
+        with open(SEEN_FILE, "r") as f:
+            LAST_SEEN_ID = int(f.read().strip())
+    except:
+        LAST_SEEN_ID = None
+
+def save_last_seen_id(tweet_id):
+    global LAST_SEEN_ID
+    if tweet_id != LAST_SEEN_ID:
+        with open(SEEN_FILE, "w") as f:
+            f.write(str(tweet_id))
+        LAST_SEEN_ID = tweet_id
 
 def process_mentions():
-    global last_seen_id
     bot_user = client.get_me().data
-
     response = client.get_users_mentions(
         id=bot_user.id,
-        expansions=["referenced_tweets.id.author_id"],
-        tweet_fields=["referenced_tweets"]
+        since_id=LAST_SEEN_ID,
+        expansions=["referenced_tweets.id.author_id", "author_id"],
+        tweet_fields=["referenced_tweets", "created_at"],
+        user_fields=["username"]
     )
 
     if not response.data:
-        return  # No new mentions
+        logging.info("No new mentions.")
+        return
 
-    for tweet in reversed(response.data):  # Process from oldest to newest
-        if last_seen_id and tweet.id <= last_seen_id:
-            continue  # Skip already processed tweets
+    users = {u.id: u for u in response.includes.get('users', [])}
+    new_last_seen_id = LAST_SEEN_ID
 
-        if TRIGGER_PHRASE in tweet.text.lower():
-            try:
-                referenced = tweet.referenced_tweets[0] if tweet.referenced_tweets else None
+    for tweet in reversed(response.data):
+        if TRIGGER_PHRASE not in tweet.text.lower():
+            continue
 
-                if referenced:
-                    if referenced.type == "quoted":
-                        print(f"Tweet {tweet.id} is a quote. Analyzing the quoter: @{tweet.author_id}")
-                        original_author_id = tweet.author_id  # The person quoting the tweet
-                    elif referenced.type == "replied_to":
-                        print(f"Tweet {tweet.id} is a reply. Analyzing the original author.")
-                        replied_tweet = client.get_tweet(referenced.id, expansions="author_id")
-                        original_author_id = replied_tweet.includes['users'][0].id
-                    else:
-                        print(f"Tweet {tweet.id} has unknown reference type. Skipping.")
-                        continue
-                else:
-                    print(f"Tweet {tweet.id} does not reference another tweet. Skipping.")
-                    continue
+        try:
+            original_author_id = None
 
+            # Handle quotes and replies
+            if tweet.referenced_tweets:
+                ref = tweet.referenced_tweets[0]
+                if ref.type == "quoted":
+                    original_author_id = tweet.author_id  # Analyze who quoted
+                    logging.info(f"🔁 Quote mention. Analyzing quoter @{users[original_author_id].username}")
+                elif ref.type == "replied_to":
+                    replied = client.get_tweet(ref.id, expansions="author_id", user_fields=["username"])
+                    original_author_id = replied.includes['users'][0].id
+                    logging.info(f"↩️ Reply mention. Analyzing replied-to user ID: {original_author_id}")
+
+            if not original_author_id:
+                logging.info(f"❌ Tweet {tweet.id} has no reference target. Skipping.")
+                continue
+
+            # Use cached data
+            if original_author_id in CACHE:
+                report, trust = CACHE[original_author_id]
+                logging.info(f"✅ Using cache for user {original_author_id}")
+            else:
                 report = analyze_account(original_author_id, client)
                 trust = is_trusted_by_network(original_author_id, client)
-                post_reply(tweet.id, report, trust, client)
+                CACHE[original_author_id] = (report, trust)
 
-            except Exception as e:
-                print(f"Error processing tweet {tweet.id}: {e}")
+            # Post reply
+            post_reply(tweet.id, report, trust, client)
+            new_last_seen_id = max(new_last_seen_id or 0, tweet.id)
 
-        last_seen_id = tweet.id
+        except Exception as e:
+            logging.error(f"🚫 Error handling tweet {tweet.id}: {e}")
+
+    if new_last_seen_id:
+        save_last_seen_id(new_last_seen_id)
 
 if __name__ == "__main__":
-    bot_info = client.get_me().data
-    print(f"🤖 Bot is running as: @{bot_info.username}")
+    bot_user = client.get_me().data
+    logging.info(f"🤖 Bot running as @{bot_user.username}")
+    load_last_seen_id()
+
     while True:
         try:
             process_mentions()
         except Exception as e:
-            print(f"Unexpected error: {e}")
-        time.sleep(60)  # Wait 60 seconds before checking again
-
-
-
+            logging.error(f"🔥 Fatal error: {e}")
+        time.sleep(15)  # ⏱️ Lower delay = faster bot, just watch for rate limits
