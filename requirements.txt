@@ -1,4 +1,4 @@
-tweepy
-requests
-textblob
-python-dotenv
+python-dotenv==1.1.0
+Requests==2.32.4
+textblob==0.19.0
+tweepy==4.15.0
