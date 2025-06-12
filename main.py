@@ -10,8 +10,10 @@ import logging
 # Load environment variables
 load_dotenv()
 
+#track bot behaviour and possible issues
 logging.basicConfig(level=logging.INFO)
 
+#accessing secret keys
 client = tweepy.Client(
     bearer_token=os.getenv("BEARER_TOKEN"),
     consumer_key=os.getenv("API_KEY"),
@@ -25,7 +27,7 @@ TRIGGER_PHRASE = "riddle me this"
 SEEN_FILE = "last_seen_id.txt"
 CACHE = {}
 
-# Last seen cache
+# Last seen cache, for optimization.
 LAST_SEEN_ID = None
 
 def load_last_seen_id():
@@ -61,6 +63,7 @@ def process_mentions():
     new_last_seen_id = LAST_SEEN_ID
 
     for tweet in reversed(response.data):
+        #skips post if the trigger phrase isnt present
         if TRIGGER_PHRASE not in tweet.text.lower():
             continue
 
@@ -101,6 +104,7 @@ def process_mentions():
     if new_last_seen_id:
         save_last_seen_id(new_last_seen_id)
 
+#ensures the bot is always running
 if __name__ == "__main__":
     bot_user = client.get_me().data
     logging.info(f"🤖 Bot running as @{bot_user.username}")

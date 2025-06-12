@@ -1,3 +1,4 @@
+#list of trusted accounts, in case github fails to fetch data in real time
 TRUSTED_ACCOUNTS = [
     # Major Solana DeFi Protocols
     "JupiterExchange",

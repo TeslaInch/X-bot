@@ -1,4 +1,6 @@
+#import the list of trusted accounts from fetch_trusted_accounts_module 
 from trusted_accounts import fetch_trusted_accounts
+
 
 TRUSTED_ACCOUNTS = set(fetch_trusted_accounts())
 
@@ -13,3 +15,5 @@ def is_trusted_by_network(user_id, client):
 
     count = sum(1 for f in followers if f.username.lower() in TRUSTED_ACCOUNTS)
     return count >= 2
+#The function above gets the 1000 of the account's followers and compare them to the trusted list.
+#if there are more than 2 present, it is trusted.

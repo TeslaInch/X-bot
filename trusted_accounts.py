@@ -11,4 +11,4 @@ def fetch_trusted_accounts():
     except requests.exceptions.RequestException:
         return FALLBACK_LIST
 
-#im using this instead of using the github repo, cause githubusercontent.com most times doesnt load up or takes alot of time to do so.
+#The function above returns the trusted accounts list, i set up a fallback list just incase github fails to fetch it in real time.
